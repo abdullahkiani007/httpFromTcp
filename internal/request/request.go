@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/abdullahkiani007/httpfromtcp/internal/headers"
@@ -18,13 +19,15 @@ type parserState string
 const (
 	StateInit           parserState = "init"
 	StateDone           parserState = "done"
-	StateParsingHeaders parserState = "parsingHeaders"
+	StateParsingHeaders parserState = "header"
+	StateParseBody      parserState = "body"
 )
 
 type Request struct {
 	RequestLine RequestLine
 	Headers     headers.Headers
 	state       parserState
+	Body        []byte
 }
 
 var rn = []byte("\r\n")
@@ -53,7 +56,7 @@ func (r *Request) parse(b []byte) (int, error) {
 		r.RequestLine = *reqLine
 		r.state = StateParsingHeaders
 		fmt.Println("changing state to stateparsing headers")
-		fmt.Printf("1.number of bytes read %v, bytes read:%v, bytes left:%v\n", n, string(b[:n]), string(b[n+2:]))
+		// fmt.Printf("1.number of bytes read %v, bytes read:%v, bytes left:%v\n", n, string(b[:n]), string(b[:]))
 		fmt.Println(r.state)
 	}
 	if r.state == StateParsingHeaders {
@@ -68,11 +71,44 @@ func (r *Request) parse(b []byte) (int, error) {
 		if err != nil {
 			return 0, err
 		} else if done {
-			r.state = StateDone
+
+			if l := r.Headers.Get("content-length"); len(l) != 0 {
+				fmt.Printf("changing to state to parsing body of len %v\n", l)
+				fmt.Printf("headers parsed %v\n", r.Headers.Header)
+				r.state = StateParseBody
+			} else {
+				fmt.Println("Changing state to done")
+				r.state = StateDone
+			}
 		} else {
 			fmt.Printf("2.number of bytes read %v, bytes read:%v, bytes left:%v\n", n, string(b[:tb]), string(b[tb:]))
 			fmt.Printf("2. returning number of bytes read %v", tb)
 			return tb, nil
+		}
+	}
+	if r.state == StateParseBody {
+		offSet := tb
+		fmt.Printf("Parsing body %v length of body %v\n", string(b[tb:]), len(b))
+		fmt.Printf("body %v\n", string(r.Body))
+		r.Body = append(r.Body, b[tb:]...)
+		fmt.Printf("after body %v\n", string(r.Body))
+
+		l := r.Headers.Get("content-length")
+		if l != "" {
+			contentLength, err := strconv.Atoi(l)
+			fmt.Printf("Content lengths is %v\n", contentLength)
+			if err != nil {
+				return 0, fmt.Errorf("invalid content-length value: %v", err)
+			}
+			if contentLength > len(r.Body) {
+				return len(b[tb:]) + offSet, nil
+			} else {
+				fmt.Println("Changing state to done in bocy")
+				r.state = StateDone
+				n = len(b[tb:]) + offSet
+				fmt.Printf("bytes parsed %v\n", n)
+			}
+
 		}
 	}
 	fmt.Printf("3.number of bytes read %v, bytes read:%v, bytes left:%v\n", n, string(b[:n]), string(b[n:]))
@@ -94,6 +130,7 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 	req := &Request{
 		state:   StateInit,
 		Headers: *headers.NewHeaders(),
+		Body:    []byte{},
 	}
 
 	for {
@@ -106,6 +143,18 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 		if err != nil {
 			if errors.Is(err, io.EOF) {
 				req.state = StateDone
+				l := req.Headers.Get("content-length")
+				if l != "" {
+					contentLength, err := strconv.Atoi(l)
+					fmt.Printf("Content lengths is %v\n", contentLength)
+					if err != nil {
+						return req, fmt.Errorf("invalid content-length value: %v", err)
+					}
+					if contentLength > len(req.Body) {
+						return req, fmt.Errorf("invalid body: %v", err)
+					}
+				}
+
 				fmt.Println("breakoing out of loop 1")
 				break
 			}
@@ -138,6 +187,8 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 			fmt.Printf("err : %e\n", err)
 			return req, err
 		}
+		fmt.Printf("before  copy buff %v, buffLen %v\n", string(buff), buffLen)
+
 		//  todo Understand this one
 		copy(buff, buff[readN:buffLen])
 		buffLen -= readN
@@ -145,6 +196,7 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 
 	}
 	fmt.Printf("loop is going to end %v\n", req)
+	fmt.Printf("parsing body %v\n", string(req.Body))
 	return req, nil
 }
 
