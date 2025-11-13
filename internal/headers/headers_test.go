@@ -15,8 +15,8 @@ func TestHeadersParse(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, headers)
 	assert.Equal(t, "localhost:42069", headers.Get("Host"))
-	assert.Equal(t, 23, n)
-	assert.False(t, done)
+	assert.Equal(t, 25, n)
+	assert.True(t, done)
 
 	// Test: InValid single header with invalid character
 	headers = NewHeaders()
@@ -33,8 +33,8 @@ func TestHeadersParse(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, headers)
 	assert.Equal(t, "localhost:42069", headers.Get("Host"))
-	assert.Equal(t, 57, n)
-	assert.False(t, done)
+	assert.Equal(t, 59, n)
+	assert.True(t, done)
 
 	// Test: Valid 2 headers with existing headers
 	headers = NewHeaders()
@@ -45,8 +45,8 @@ func TestHeadersParse(t *testing.T) {
 	require.NotNil(t, headers)
 	assert.Equal(t, "localhost:42069", headers.Get("host"))
 	assert.Equal(t, "curl/7.81.0", headers.Get("User-Agent"))
-	assert.Equal(t, 25, n)
-	assert.False(t, done)
+	assert.Equal(t, 40, n)
+	assert.True(t, done)
 
 	// Test: Valid done
 	headers = NewHeaders()
@@ -54,7 +54,7 @@ func TestHeadersParse(t *testing.T) {
 	n, done, err = headers.Parse(data)
 	require.NoError(t, err)
 	require.NotNil(t, headers)
-	assert.Empty(t, headers.headers)
+	assert.Empty(t, headers.Header)
 	assert.Equal(t, 2, n)
 	assert.True(t, done)
 
@@ -64,5 +64,19 @@ func TestHeadersParse(t *testing.T) {
 	n, done, err = headers.Parse(data)
 	require.Error(t, err)
 	assert.Equal(t, 0, n)
+	assert.False(t, done)
+
+	// Test: Valid header with multiple values
+	headers = NewHeaders()
+	headers.Set("allow-origin", "localhost:1203")
+	headers.Set("allow-origin", "localhost:8833")
+	headers.Set("allow-origin", "localhost:9999")
+
+	data = []byte("allow-origin:localhost:12033\r\n")
+	n, done, err = headers.Parse(data)
+	require.NoError(t, err)
+	require.NotNil(t, headers)
+	assert.Equal(t, "localhost:1203,localhost:8833,localhost:9999,localhost:12033", headers.Get("allow-origin"))
+	assert.Equal(t, 30, n)
 	assert.False(t, done)
 }
